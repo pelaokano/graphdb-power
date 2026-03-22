@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>graphdb Visualizer</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <h1>graphdb Visualizer</h1>
+  <span id="db-badge">Sin base de datos</span>
+  <div class="sep"></div>
+  <button class="btn-open"      id="btn-open">Abrir BD</button>
+  <button class="btn-secondary" id="btn-close-db" disabled>Cerrar BD</button>
+  <div class="sep"></div>
+  <button class="btn-primary"   id="btn-load"   disabled>Cargar grafo</button>
+  <button class="btn-secondary" id="btn-center" disabled>Centrar</button>
+  <button class="btn-secondary" id="btn-clear">Limpiar</button>
+  <button class="btn-secondary" id="btn-export" disabled>Exportar PNG</button>
+</div>
+
+<!-- MIDDLE: sidebar + graph -->
+<div id="middle">
+
+  <!-- SIDEBAR -->
+  <div id="sidebar">
+
+    <div class="s-section">
+      <h3>Layout</h3>
+      <select id="layout-select">
+        <option value="cose">cose — Basado en fuerzas</option>
+        <option value="breadthfirst">breadthfirst — Arbol</option>
+        <option value="circle">circle — Circulo</option>
+        <option value="concentric">concentric — Concentrico</option>
+        <option value="grid">grid — Cuadricula</option>
+        <option value="random">random — Aleatorio</option>
+      </select>
+    </div>
+
+    <div class="s-section">
+      <h3>Consulta Cypher</h3>
+      <textarea id="cypher-input" placeholder="MATCH (n:Bus) RETURN n&#10;Ctrl+Enter para ejecutar"></textarea>
+      <div id="q-controls">
+        <button class="btn-primary"   id="btn-run"      disabled>Ejecutar</button>
+        <button class="btn-secondary" id="btn-clear-hl">Limpiar resaltado</button>
+      </div>
+      <select id="q-history"><option value="">— Historial —</option></select>
+      <div id="q-result"></div>
+    </div>
+
+    <div class="s-section">
+      <h3>Nodos</h3>
+      <div class="filter-group">
+        <label><input type="checkbox" checked data-filter="node" data-label="Bus">
+          <span class="dot" style="background:#4a90d9"></span> Bus</label>
+        <label><input type="checkbox" checked data-filter="node" data-label="Generator">
+          <span class="dot" style="background:#4caf50"></span> Generator</label>
+        <label><input type="checkbox" checked data-filter="node" data-label="Load">
+          <span class="dot" style="background:#ff9800"></span> Load</label>
+        <label><input type="checkbox" checked data-filter="node" data-label="Shunt">
+          <span class="dot" style="background:#ffeb3b"></span> Shunt</label>
+        <label><input type="checkbox" checked data-filter="node" data-label="__other__">
+          <span class="dot" style="background:#90a4ae"></span> Otros</label>
+      </div>
+    </div>
+
+    <div class="s-section">
+      <h3>Relaciones</h3>
+      <div class="filter-group">
+        <label><input type="checkbox" checked data-filter="edge" data-label="LINEA">
+          <span class="line-dot" style="background:#ccc"></span> LINEA</label>
+        <label><input type="checkbox" checked data-filter="edge" data-label="LINE">
+          <span class="line-dot" style="background:#ccc"></span> LINE</label>
+        <label><input type="checkbox" checked data-filter="edge" data-label="TRANSFORMADOR_2W">
+          <span class="line-dot" style="background:#f44336"></span> TRANSFORMADOR_2W</label>
+        <label><input type="checkbox" checked data-filter="edge" data-label="GENERACION">
+          <span class="line-dot" style="background:#81c784"></span> GENERACION</label>
+        <label><input type="checkbox" checked data-filter="edge" data-label="CONSUMO">
+          <span class="line-dot" style="background:#ffb74d"></span> CONSUMO</label>
+        <label><input type="checkbox" checked data-filter="edge" data-label="__other__">
+          <span class="line-dot" style="background:#607d8b"></span> Otros</label>
+      </div>
+    </div>
+
+  </div><!-- /sidebar -->
+
+  <!-- GRAPH -->
+  <div id="graph-wrap">
+    <div id="cy"></div>
+
+    <!-- welcome overlay -->
+    <div id="welcome">
+      <h2>graphdb Visualizer</h2>
+      <p>Abre una base de datos para comenzar</p>
+      <button class="btn-open" id="btn-open-welcome">Abrir base de datos</button>
+    </div>
+
+    <div id="trunc-msg"></div>
+    <div id="statusbar">0 nodos / 0 aristas</div>
+    <div id="spinner"></div>
+
+    <div id="zoom-controls">
+      <button class="btn-secondary btn-icon" id="btn-zoom-in"  title="+">+</button>
+      <button class="btn-secondary btn-icon" id="btn-zoom-out" title="−">−</button>
+    </div>
+
+    <!-- Properties panel -->
+    <div id="prop-panel">
+      <div id="prop-header">
+        <h3 id="prop-title">Propiedades</h3>
+        <button class="btn-icon" id="btn-close-prop">✕</button>
+      </div>
+      <div id="prop-body"></div>
+    </div>
+  </div><!-- /graph-wrap -->
+
+</div><!-- /middle -->
+
+<!-- LOG CONSOLE -->
+<div id="log-bar">
+  <div id="log-header">
+    <div id="log-dot"></div>
+    <span>Consola</span>
+    <div id="log-actions" onclick="event.stopPropagation()">
+      <button class="btn-icon" id="btn-log-max"   title="Maximizar">⤢</button>
+      <button class="btn-icon" id="btn-log-clear" title="Limpiar">🗑</button>
+    </div>
+  </div>
+  <div id="log-body"></div>
+</div>
+
+<!-- Tooltip flotante -->
+<div id="cy-tooltip">
+    <div id="cy-tooltip-header">
+        <span id="tt-badge" class="tt-badge"></span>
+        <span id="tt-id"    class="tt-id"></span>
+    </div>
+    <div id="cy-tooltip-body"></div>
+</div>
+
+<script src="cytoscape.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+graphdb-power/
+test_completo/
+otros/
+bases/
+
+api_reference.md
+estructura_proyecto.md
+publicar_pypi.md
+
+graphdb-power_sr/__pycache__/
+graphdb-power_sr/build/
+graphdb-power_sr/graphdb.cp313-win_amd64.pyd
+
+graphdb-visualizador/IEEE118bus.db
+graphdb-visualizador/Temp12.db
+graphdb-visualizador/test.db
