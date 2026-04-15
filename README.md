@@ -7,9 +7,11 @@ Built with a C core for high performance, backed by SQLite for full ACID transac
 ## Features
 
 - **Cypher queries**: MATCH, CREATE, MERGE, SET, DELETE, WHERE, ORDER BY, LIMIT, SKIP, UNION and more
-- **Graph algorithms in C**: connected components, bridges, articulation points, N-1 topological check, Dijkstra, degree
-- **Analysis layer**: adjacency matrix, Laplacian, Ybus, betweenness/closeness/pagerank centrality, max-flow, min-cut, spectral partition, community detection
-- **Power systems helpers**: BESS siting ranking, congestion risk, network robustness metrics
+- **Graph algorithms in C**: connected components, bridges, articulation points, N-1 check, Dijkstra, degree, betweenness centrality (Brandes), PageRank, max flow (Edmonds-Karp), k-shortest paths (Yen's), SCC (Kosaraju), clustering coefficient
+- **Analysis layer** (`GraphAnalyzer`): adjacency matrix, Laplacian, Ybus, spectral partition, community detection (Louvain), vulnerability index, electrical distance, BESS placement ranking
+- **Power systems** (`GraphPTDF`, `GraphLODF`): PTDF sensitivity matrix with top-K persistence, N-1 LODF contingency analysis with verdicts (critico/advertencia/seguro/puente/singular)
+- **MCP server** (`graphdb_mcp.py`): 34 tools via FastMCP exposing the full analysis suite to Claude Desktop and Cursor
+- **Interactive visualizer**: pywebview desktop app with Cytoscape.js, algorithm panel, PTDF/LODF interface
 - **SQLite backend**: WAL mode, ACID transactions, JSON properties on nodes and relationships
 - **No external dependencies for the core**: SQLite is bundled
 
@@ -17,7 +19,9 @@ Built with a C core for high performance, backed by SQLite for full ACID transac
 
 - Windows 64-bit
 - Python 3.13
-- numpy, scipy, networkx (for GraphAnalyzer)
+- numpy, scipy, networkx (for `GraphAnalyzer`)
+- fastmcp (optional, for MCP server)
+- pywebview (optional, for the visualizer)
 
 ## Installation
 
@@ -52,11 +56,19 @@ with graphdb.Graph("my_network.db") as g:
         ORDER BY r.x_pu
     """)
 
-    # graph algorithms (C layer)
+    # graph algorithms — C layer
     print(g.is_connected(rel_type="LINE"))
     print(g.find_bridges(rel_type="LINE"))
     print(g.find_articulation_points(rel_type="LINE"))
     print(g.dijkstra(b1, rel_type="LINE", weight_key="x_pu"))
+
+    # new in v0.3.0 — C-accelerated algorithms
+    bc  = g.betweenness_centrality(rel_type="LINE")   # Brandes O(VE)
+    pr  = g.pagerank(rel_type="LINE", damping=0.85)
+    mf  = g.max_flow(b1, b3, rel_type="LINE")          # Edmonds-Karp
+    ksp = g.k_shortest_paths(b1, b3, k=3, rel_type="LINE")  # Yen's
+    scc = g.strongly_connected_components(rel_type="LINE")   # Kosaraju
+    cc  = g.clustering_coefficient(rel_type="LINE")
 
     # analysis layer (Python + NumPy/SciPy/NetworkX)
     ana = GraphAnalyzer(g)
@@ -65,8 +77,10 @@ with graphdb.Graph("my_network.db") as g:
     Y, node_ids = ana.ybus_matrix(rel_type="LINE", weight_key="x_pu")
 
     print(ana.fiedler_value(rel_type="LINE"))
-    print(ana.betweenness_centrality(rel_type="LINE"))
-    print(ana.bess_siting_ranking(rel_type="LINE", weight_key="x_pu", n=5))
+    print(ana.community_detection(rel_type="LINE"))
+    print(ana.vulnerability_index(rel_type="LINE"))
+    print(ana.electrical_distance(rel_type="LINE"))
+    print(ana.bess_placement_ranking(rel_type="LINE", weight_key="x_pu"))
     print(ana.network_robustness(rel_type="LINE"))
 ```
 
@@ -85,6 +99,58 @@ with GraphDbLoader("ieee118.db") as loader:
     loader.cargar_datos(data)
     loader.resumen()
 ```
+
+## PTDF / LODF (power systems contingency analysis)
+
+```python
+import pandas as pd
+from graphdb_ptdf import GraphPTDF
+from graphdb_lodf import GraphLODF
+
+# ptdf_df: DataFrame (n_branches x n_buses) pre-calculated by PTDFCalculator
+gptdf = GraphPTDF(g, ptdf_df, rel_type="LINEA", persist_topk=True)
+glodf = GraphLODF(gptdf)
+
+# N-1 contingency analysis
+results = glodf.contingency_n1(monitored_label="L 1-2")
+for row in results.itertuples():
+    print(row.outage, row.delta_flow_pct, row.verdict)
+
+# Worst-case outage for a monitored line
+print(glodf.worst_case_outage("L 1-2"))
+```
+
+## MCP server (Claude Desktop / Cursor integration)
+
+```bash
+pip install fastmcp
+python graphdb_mcp.py
+```
+
+Exposes 34 tools covering: graph topology, centrality, shortest paths, max flow,
+community detection, global metrics, power system analysis, and PTDF/LODF.
+
+## Building from source
+
+Requires Visual Studio Build Tools 2022 and the SQLite amalgamation (`sqlite3.h` + `sqlite3.c`
+are bundled in the repository).
+
+```bash
+python setup.py build_ext --inplace
+```
+
+## Changelog
+
+### v0.3.0
+- C layer: added Brandes betweenness, PageRank, Edmonds-Karp max flow, Yen's k-shortest-paths, Kosaraju SCC, clustering coefficient
+- New `GraphPTDF` module: integrates PTDF sensitivity matrix with the graph DB
+- New `GraphLODF` module: N-1 contingency analysis with severity verdicts
+- New `graphdb_mcp.py`: 34 MCP tools for AI assistant integration
+- `GraphAnalyzer`: added `vulnerability_index`, `electrical_distance`, `bess_placement_ranking` and more
+- Visualizer: algorithm panel with 15+ algorithm buttons, PTDF/LODF interface
+
+### v0.2.0
+- Initial public release with Cypher support, basic C algorithms, and PSS/E loader
 
 ## License
 

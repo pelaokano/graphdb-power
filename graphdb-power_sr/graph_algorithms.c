@@ -1038,18 +1038,20 @@ ComponentResult *algo_strongly_connected_components(Graph *g,
     int *finish_stack = malloc(n * sizeof(int));
     int  finish_top   = 0;
 
-    int *dfs_stack = malloc(n * sizeof(int));
+    /* stack needs room for n markers + up to edge_count neighbor pushes */
+    int *dfs_stack = malloc((n + al->edge_count + 2) * sizeof(int));
     for (int start = 0; start < n; start++) {
         if (visited[start]) continue;
         int top = 0;
         dfs_stack[top++] = start;
         while (top > 0) {
             int u = dfs_stack[--top];
-            if (visited[u]) {
-                /* post-order: push to finish */
-                if (u >= 0) finish_stack[finish_top++] = u;
+            if (u < 0) {
+                /* post-order marker: -(node+1) encodes node index */
+                finish_stack[finish_top++] = -(u + 1);
                 continue;
             }
+            if (visited[u]) continue;
             visited[u] = 1;
             dfs_stack[top++] = -(u + 1); /* marker for post-order */
             for (AdjEdge *e = al->nodes[u].head; e; e = e->next) {
