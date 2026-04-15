@@ -298,3 +298,117 @@ select { cursor: pointer; }
 }
 .tt-edge-arrow strong { color: var(--accent2); }
 
+
+/* ================================================================== */
+/*  ALGORITHM PANEL — appended, no existing rules modified             */
+/* ================================================================== */
+
+.algo-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 6px;
+}
+
+.algo-subhead {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    color: var(--accent2);
+    margin-top: 8px;
+    margin-bottom: 2px;
+    opacity: .8;
+}
+
+.algo-btn {
+    background: var(--panel2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 5px 8px;
+    font-size: 11px;
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
+    transition: background .12s, border-color .12s;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.algo-btn:hover   { background: #1a3a6a; border-color: var(--accent2); }
+.algo-btn:active  { transform: scale(.97); }
+.algo-btn.running { border-color: var(--warn); color: var(--warn); }
+.algo-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+.algo-inputs {
+    display: flex;
+    gap: 4px;
+    margin: 4px 0 2px;
+}
+.algo-inputs input {
+    flex: 1;
+    font-size: 11px;
+    padding: 4px 6px;
+}
+
+/* Result panel */
+#algo-result-panel {
+    margin-top: 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    display: none;
+}
+#algo-result-title {
+    background: var(--panel2);
+    color: var(--accent2);
+    font-size: 10px;
+    font-weight: 700;
+    padding: 5px 8px;
+    border-bottom: 1px solid var(--border);
+    text-transform: uppercase;
+    letter-spacing: .05em;
+}
+#algo-result-body {
+    max-height: 220px;
+    overflow-y: auto;
+    padding: 6px 8px;
+    font-size: 11px;
+    font-family: 'Consolas', 'Courier New', monospace;
+}
+
+.algo-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 2px 0;
+    border-bottom: 1px solid rgba(42,58,90,.3);
+    line-height: 1.5;
+}
+.algo-row:last-child { border-bottom: none; }
+.algo-key   { color: var(--dim); flex-shrink: 0; max-width: 100px;
+               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.algo-val   { color: var(--accent2); text-align: right; }
+.algo-val.hi  { color: var(--error); }
+.algo-val.mid { color: var(--warn); }
+.algo-val.lo  { color: var(--success); }
+
+.algo-scalar {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent2);
+    text-align: center;
+    padding: 10px 0 4px;
+}
+.algo-scalar-sub {
+    font-size: 10px;
+    color: var(--dim);
+    text-align: center;
+    padding-bottom: 6px;
+}
+
+.algo-highlight {
+    background: rgba(0,180,216,.12);
+    border: 1px solid var(--accent2);
+}

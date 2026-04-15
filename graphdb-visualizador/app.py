@@ -369,6 +369,362 @@ class GraphAPI:
 
 
     # ----------------------------------------------------------------
+    # Graph algorithms panel
+    # ----------------------------------------------------------------
+
+    def run_algorithm(self, algo, params):
+        """
+        Execute a named graph algorithm and return a serializable result.
+
+        algo   : str  — algorithm name
+        params : dict — optional parameters (rel_type, weight_key, src, dst, k, ...)
+        """
+        try:
+            self._require_db()
+            import graphdb_algorithms as ga
+
+            ana      = ga.GraphAnalyzer(self.g)
+            rel_type = params.get("rel_type") or None
+            w_key    = params.get("weight_key") or None
+            self._log("INFO", f"Algoritmo: {algo} rel_type={rel_type}")
+
+            # --- topology ---
+            if algo == "is_connected":
+                val = self.g.is_connected(rel_type=rel_type)
+                return {"ok": True, "type": "scalar",
+                        "label": "Conectado", "value": str(val)}
+
+            elif algo == "connected_components":
+                comp_map, n = self.g.connected_components(rel_type=rel_type)
+                return {"ok": True, "type": "scalar",
+                        "label": "Componentes conectadas", "value": str(n)}
+
+            elif algo == "strongly_connected_components":
+                comp_map, n = ana.strongly_connected_components(rel_type)
+                return {"ok": True, "type": "node_map",
+                        "label": "CFC (componente fuertemente conexa)",
+                        "data": {str(k): v for k, v in comp_map.items()},
+                        "scalar": f"{n} componentes"}
+
+            elif algo == "bridges":
+                ids = self.g.find_bridges(rel_type=rel_type)
+                return {"ok": True, "type": "id_list",
+                        "label": "Puentes (aristas criticas N-1)",
+                        "ids": [str(i) for i in ids],
+                        "scalar": f"{len(ids)} puentes"}
+
+            elif algo == "articulation_points":
+                ids = self.g.find_articulation_points(rel_type=rel_type)
+                return {"ok": True, "type": "id_list",
+                        "label": "Puntos de articulacion (nodos criticos)",
+                        "ids": [str(i) for i in ids],
+                        "scalar": f"{len(ids)} puntos"}
+
+            # --- centralities ---
+            elif algo == "betweenness":
+                data = ana.betweenness_centrality_c(rel_type)
+                return {"ok": True, "type": "node_map",
+                        "label": "Betweenness Centrality",
+                        "data": {str(k): round(v, 6) for k, v in data.items()}}
+
+            elif algo == "pagerank":
+                data = ana.pagerank_c(rel_type)
+                return {"ok": True, "type": "node_map",
+                        "label": "PageRank",
+                        "data": {str(k): round(v, 6) for k, v in data.items()}}
+
+            elif algo == "closeness":
+                data = ana.closeness_centrality(rel_type, w_key)
+                return {"ok": True, "type": "node_map",
+                        "label": "Closeness Centrality",
+                        "data": {str(k): round(v, 6) for k, v in data.items()}}
+
+            elif algo == "degree":
+                data = self.g.degree(rel_type=rel_type)
+                return {"ok": True, "type": "node_map",
+                        "label": "Grado de nodos",
+                        "data": {str(k): v for k, v in data.items()}}
+
+            elif algo == "clustering":
+                res = ana.clustering_coefficient_c(rel_type)
+                local = {str(k): (round(v, 4) if v is not None else None)
+                         for k, v in res.get("local", {}).items()}
+                return {"ok": True, "type": "node_map",
+                        "label": "Clustering Coefficient",
+                        "data": local,
+                        "scalar": f"Global: {round(res.get('global', 0), 4)}"}
+
+            # --- paths ---
+            elif algo == "dijkstra":
+                src = int(params.get("src", 0))
+                res = self.g.dijkstra(src, rel_type=rel_type, weight_key=w_key)
+                data = {str(r["node_id"]): round(r["dist"], 4)
+                        for r in res if r["dist"] >= 0}
+                return {"ok": True, "type": "node_map",
+                        "label": f"Dijkstra desde nodo {src}",
+                        "data": data}
+
+            elif algo == "k_shortest":
+                src = int(params.get("src", 0))
+                dst = int(params.get("dst", 0))
+                k   = int(params.get("k", 3))
+                res = ana.k_shortest_paths_c(src, dst, k=k,
+                                              rel_type=rel_type, weight_key=w_key)
+                paths = [{"nodes": p["nodes"], "cost": round(p["cost"], 4)}
+                         for p in res]
+                return {"ok": True, "type": "paths",
+                        "label": f"{k} caminos mas cortos {src}->{dst}",
+                        "data": paths}
+
+            elif algo == "max_flow":
+                src = int(params.get("src", 0))
+                dst = int(params.get("dst", 0))
+                cap = params.get("capacity_key", "rate_A_MVA")
+                val = ana.max_flow_c(src, dst, rel_type, cap)
+                return {"ok": True, "type": "scalar",
+                        "label": f"Flujo maximo {src} -> {dst}",
+                        "value": round(val, 4)}
+
+            # --- global metrics ---
+            elif algo == "density":
+                val = ana.density(rel_type)
+                return {"ok": True, "type": "scalar",
+                        "label": "Densidad del grafo",
+                        "value": round(val, 6)}
+
+            elif algo == "fiedler":
+                val = ana.fiedler_value(rel_type)
+                return {"ok": True, "type": "scalar",
+                        "label": "Valor de Fiedler (conectividad algebraica)",
+                        "value": round(val, 6)}
+
+            elif algo == "assortativity":
+                val = ana.assortativity(rel_type)
+                return {"ok": True, "type": "scalar",
+                        "label": "Asortatividad",
+                        "value": round(val, 4)}
+
+            elif algo == "summary":
+                data = ana.summary(rel_type)
+                return {"ok": True, "type": "summary",
+                        "label": "Resumen del grafo", "data": data}
+
+            elif algo == "bess_ranking":
+                n   = int(params.get("n", 10))
+                res = ana.bess_siting_ranking(rel_type=rel_type or "LINEA",
+                                               weight_key=w_key or "X_pu", n=n)
+                return {"ok": True, "type": "ranking",
+                        "label": f"Top {n} barras candidatas BESS",
+                        "data": [[str(nid), round(score, 6)]
+                                  for nid, score in res]}
+
+            elif algo == "vulnerability":
+                res = ana.vulnerability_index(rel_type)
+                return {"ok": True, "type": "edge_list",
+                        "label": "Indice de vulnerabilidad de aristas",
+                        "data": [[str(rid), src, dst, idx]
+                                  for rid, src, dst, idx in res[:20]]}
+
+            else:
+                return {"ok": False, "error": f"Algoritmo desconocido: {algo}"}
+
+        except Exception as e:
+            self._log("ERROR", f"run_algorithm({algo}): {e}")
+            return {"ok": False, "error": str(e)}
+
+    # ----------------------------------------------------------------
+    # PTDF / LODF analysis
+    # ----------------------------------------------------------------
+
+    def run_ptdf_analysis(self, action, params):
+        """
+        Interfaz unificada para analisis PTDF/LODF desde el visualizador.
+
+        action  : str — nombre de la operacion
+        params  : dict — parametros de la operacion
+
+        Operaciones soportadas:
+            cargar_ptdf        — carga PTDF desde archivo CSV
+            sensibilidad_rama  — fila de la PTDF para una rama
+            impacto_bus        — columna de la PTDF para un bus
+            ptdf_cruzado       — valor puntual PTDF[rama, bus]
+            n1_electrico       — dictamen N-1 electrico completo
+            ranking_n1         — ranking de contingencias criticas
+            flujos_post        — flujos post-contingencia
+            resumen_ptdf       — metricas de resumen de la PTDF cargada
+        """
+        try:
+            self._require_db()
+            import graphdb_algorithms as ga
+            from graphdb_ptdf import GraphPTDF
+            from graphdb_lodf import GraphLODF
+
+            # Estado PTDF/LODF persistido en el API object
+            if not hasattr(self, "_gptdf"):
+                self._gptdf = None
+                self._glodf = None
+
+            ana = ga.GraphAnalyzer(self.g)
+
+            # ----------------------------------------------------------
+            if action == "cargar_ptdf":
+                import pandas as pd
+                ptdf_path   = params.get("ptdf_csv", "")
+                flows_path  = params.get("flows_csv", "")
+                ratings_path = params.get("ratings_csv", "")
+
+                if not os.path.exists(ptdf_path):
+                    return {"ok": False,
+                            "error": f"Archivo no encontrado: {ptdf_path}"}
+
+                ptdf_df = pd.read_csv(ptdf_path, index_col=0)
+                ptdf_df.columns = [int(c) for c in ptdf_df.columns]
+
+                self._gptdf = ana.ptdf_from_dataframe(
+                    ptdf_df,
+                    rel_type=params.get("rel_type", "LINEA"),
+                    persist_topk=True,
+                )
+
+                result = {"ok": True, "type": "summary",
+                          "label": "PTDF cargada",
+                          "data": self._gptdf.resumen()}
+
+                if flows_path and os.path.exists(flows_path):
+                    flows_df = pd.read_csv(flows_path)
+                    flows_s  = pd.Series(
+                        flows_df.iloc[:, 1].values,
+                        index=flows_df.iloc[:, 0].astype(str).values,
+                    )
+                    ratings_s = None
+                    if ratings_path and os.path.exists(ratings_path):
+                        rat_df    = pd.read_csv(ratings_path)
+                        ratings_s = pd.Series(
+                            rat_df.iloc[:, 1].values,
+                            index=rat_df.iloc[:, 0].astype(str).values,
+                        )
+                    self._glodf = ana.lodf_from_ptdf(
+                        self._gptdf, flows_s, ratings_s)
+                    result["lodf"] = self._glodf.resumen()
+
+                return result
+
+            # ----------------------------------------------------------
+            elif action == "sensibilidad_rama":
+                if self._gptdf is None:
+                    return {"ok": False,
+                            "error": "PTDF no cargada. Usa cargar_ptdf primero."}
+                label = params.get("label", "")
+                s = self._gptdf.sensibilidad_rama(label)
+                if s is None:
+                    return {"ok": False,
+                            "error": f"Rama '{label}' no encontrada"}
+                top20 = s.abs().sort_values(ascending=False).head(20)
+                return {
+                    "ok": True, "type": "node_map",
+                    "label": f"PTDF rama '{label}'",
+                    "data": {str(b): round(float(s.loc[b]), 6)
+                             for b in top20.index},
+                }
+
+            # ----------------------------------------------------------
+            elif action == "impacto_bus":
+                if self._gptdf is None:
+                    return {"ok": False,
+                            "error": "PTDF no cargada."}
+                bus_num = int(params.get("bus_num", 0))
+                s = self._gptdf.impacto_inyeccion_bus(bus_num, top_n=20)
+                if s.empty:
+                    return {"ok": False,
+                            "error": f"Bus {bus_num} no en PTDF"}
+                return {
+                    "ok": True, "type": "edge_list",
+                    "label": f"Impacto inyeccion bus {bus_num}",
+                    "data": [[lbl, 0, 0, round(float(v), 6)]
+                             for lbl, v in s.items()],
+                }
+
+            # ----------------------------------------------------------
+            elif action == "ptdf_cruzado":
+                if self._gptdf is None:
+                    return {"ok": False, "error": "PTDF no cargada."}
+                val = self._gptdf.ptdf_cruzado(
+                    params.get("rama", ""),
+                    int(params.get("bus_num", 0)),
+                )
+                return {
+                    "ok": True, "type": "scalar",
+                    "label": (f"PTDF['{params.get('rama')}', "
+                              f"bus={params.get('bus_num')}]"),
+                    "value": round(val, 6),
+                }
+
+            # ----------------------------------------------------------
+            elif action == "n1_electrico":
+                if self._glodf is None:
+                    return {"ok": False,
+                            "error": "LODF no calculada."}
+                result = self._glodf.verificar_n1_electrico(
+                    params.get("label", ""))
+                return {
+                    "ok": True, "type": "summary",
+                    "label": f"N-1 electrico '{params.get('label')}'",
+                    "data": result,
+                }
+
+            # ----------------------------------------------------------
+            elif action == "ranking_n1":
+                if self._glodf is None:
+                    return {"ok": False, "error": "LODF no calculada."}
+                n = int(params.get("n", 20))
+                df = self._glodf.ranking_contingencias_criticas(n)
+                return {
+                    "ok": True, "type": "ranking",
+                    "label": f"Top {n} contingencias N-1",
+                    "data": [[r["label"],
+                               r["max_loading_pct"],
+                               r["n_overloads"]]
+                              for _, r in df.iterrows()],
+                }
+
+            # ----------------------------------------------------------
+            elif action == "flujos_post":
+                if self._glodf is None:
+                    return {"ok": False, "error": "LODF no calculada."}
+                label_outage = params.get("label", "")
+                flows = self._glodf.flujos_post_contingencia(label_outage)
+                if flows is None:
+                    return {"ok": False,
+                            "error": f"Contingencia '{label_outage}' "
+                                     f"no valida (puente o singular)"}
+                top15 = flows.abs().sort_values(ascending=False).head(15)
+                return {
+                    "ok": True, "type": "edge_list",
+                    "label": f"Flujos post '{label_outage}'",
+                    "data": [[lbl, 0, 0, round(float(flows.loc[lbl]), 2)]
+                             for lbl in top15.index],
+                }
+
+            # ----------------------------------------------------------
+            elif action == "resumen_ptdf":
+                if self._gptdf is None:
+                    return {"ok": False, "error": "PTDF no cargada."}
+                data = self._gptdf.resumen()
+                if self._glodf is not None:
+                    data.update({"lodf_" + k: v
+                                 for k, v in self._glodf.resumen().items()})
+                return {"ok": True, "type": "summary",
+                        "label": "Resumen PTDF/LODF", "data": data}
+
+            else:
+                return {"ok": False,
+                        "error": f"Accion desconocida: {action}"}
+
+        except Exception as e:
+            self._log("ERROR", f"run_ptdf_analysis({action}): {e}")
+            return {"ok": False, "error": str(e)}
+
+    # ----------------------------------------------------------------
     # Export PNG
     # ----------------------------------------------------------------
 

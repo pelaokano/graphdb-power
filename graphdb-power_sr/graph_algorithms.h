@@ -112,3 +112,86 @@ DegreeResult *algo_degree(Graph *g, const char *rel_type);
 void          degree_result_free(DegreeResult *r);
 
 #endif /* GRAPH_ALGORITHMS_H */
+
+/* ------------------------------------------------------------------ */
+/*  Centrality results                                                  */
+/* ------------------------------------------------------------------ */
+
+typedef struct {
+    int64_t node_id;
+    double  value;
+} CentralityEntry;
+
+typedef struct {
+    CentralityEntry *entries;
+    int              count;
+} CentralityResult;
+
+/* normalized: 1 = divide by (n-1)(n-2)/2 */
+CentralityResult *algo_betweenness_centrality(Graph *g, const char *rel_type,
+                                               int normalized);
+
+/* damping: typically 0.85 / max_iter: typically 100 / tol: 1e-6 */
+CentralityResult *algo_pagerank(Graph *g, const char *rel_type,
+                                 double damping, int max_iter, double tol);
+
+void centrality_result_free(CentralityResult *r);
+
+/* ------------------------------------------------------------------ */
+/*  K shortest paths (Yen)                                             */
+/* ------------------------------------------------------------------ */
+
+typedef struct {
+    int64_t *node_ids;   /* path nodes in order */
+    int64_t *rel_ids;    /* connecting rels     */
+    int      length;     /* number of nodes     */
+    double   cost;
+} KPath;
+
+typedef struct {
+    KPath *paths;
+    int    count;
+} KPathResult;
+
+KPathResult *algo_k_shortest_paths(Graph *g, int64_t src, int64_t dst,
+                                    int k, const char *rel_type,
+                                    const char *weight_key);
+void kpath_result_free(KPathResult *r);
+
+/* ------------------------------------------------------------------ */
+/*  Max flow / min cut (Edmonds-Karp)                                  */
+/* ------------------------------------------------------------------ */
+
+typedef struct {
+    double   flow_value;
+    int      ok;
+} FlowResult;
+
+FlowResult algo_max_flow(Graph *g, int64_t src, int64_t dst,
+                          const char *rel_type, const char *capacity_key);
+
+/* ------------------------------------------------------------------ */
+/*  Strongly connected components (Kosaraju)                           */
+/* ------------------------------------------------------------------ */
+
+/* reuses ComponentResult from above */
+ComponentResult *algo_strongly_connected_components(Graph *g,
+                                                     const char *rel_type);
+
+/* ------------------------------------------------------------------ */
+/*  Clustering coefficient                                             */
+/* ------------------------------------------------------------------ */
+
+typedef struct {
+    int64_t node_id;
+    double  local_cc;   /* -1 if degree < 2 */
+} CCEntry;
+
+typedef struct {
+    CCEntry *entries;
+    int      count;
+    double   global_cc;
+} ClusterResult;
+
+ClusterResult *algo_clustering_coefficient(Graph *g, const char *rel_type);
+void cluster_result_free(ClusterResult *r);

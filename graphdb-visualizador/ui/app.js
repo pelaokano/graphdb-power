@@ -635,3 +635,210 @@ window.addEventListener('DOMContentLoaded', () => {
         window.appendLog('INFO', 'API Python conectada. Usa "Abrir BD" para comenzar.');
     });
 });
+
+// ================================================================
+// ALGORITHM PANEL — appended, no existing code modified
+// ================================================================
+
+// ----------------------------------------------------------------
+// Helpers
+// ----------------------------------------------------------------
+function algoSpinner(btn, on) {
+    if (on) { btn.classList.add('running'); btn.disabled = true; }
+    else    { btn.classList.remove('running'); btn.disabled = false; }
+}
+
+function showAlgoResult(title, html) {
+    const panel = document.getElementById('algo-result-panel');
+    document.getElementById('algo-result-title').textContent = title;
+    document.getElementById('algo-result-body').innerHTML = html;
+    panel.style.display = 'block';
+}
+
+function algoVal(v, lo, hi) {
+    const f = parseFloat(v);
+    if (isNaN(f)) return `<span class="algo-val">${v}</span>`;
+    let cls = 'algo-val';
+    if (hi !== undefined && f > hi) cls += ' hi';
+    else if (lo !== undefined && f > lo) cls += ' mid';
+    else cls += ' lo';
+    return `<span class="${cls}">${v}</span>`;
+}
+
+function renderNodeMap(data, topN = 20) {
+    const entries = Object.entries(data)
+        .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+        .slice(0, topN);
+    const max = Math.max(...entries.map(([, v]) => Math.abs(v))) || 1;
+    return entries.map(([nid, val]) => {
+        const pct = Math.abs(val) / max;
+        const cls = pct > 0.7 ? 'hi' : pct > 0.35 ? 'mid' : 'lo';
+        const display = typeof val === 'number' ? val.toFixed(4) : val;
+        return `<div class="algo-row">
+            <span class="algo-key">${nid}</span>
+            <span class="algo-val ${cls}">${display}</span>
+        </div>`;
+    }).join('');
+}
+
+function renderSummary(data) {
+    return Object.entries(data).map(([k, v]) => {
+        const display = typeof v === 'number' ? v.toFixed(4) : String(v);
+        return `<div class="algo-row">
+            <span class="algo-key">${k}</span>
+            <span class="algo-val">${display}</span>
+        </div>`;
+    }).join('');
+}
+
+// ----------------------------------------------------------------
+// Highlight nodes/edges in Cytoscape based on algorithm results
+// ----------------------------------------------------------------
+function highlightFromAlgo(result) {
+    if (!cy || !result) return;
+    cy.elements().removeClass('highlighted');
+
+    if (result.type === 'node_map' && result.data) {
+        const ids = Object.keys(result.data);
+        ids.forEach(id => {
+            const el = cy.getElementById(id);
+            if (el.length) el.addClass('highlighted');
+        });
+    } else if (result.type === 'id_list' && result.ids) {
+        result.ids.forEach(id => {
+            // try as node first, then as edge
+            let el = cy.getElementById(id);
+            if (!el.length) el = cy.getElementById('e' + id);
+            if (el.length) el.addClass('highlighted');
+        });
+    } else if (result.type === 'ranking' && result.data) {
+        result.data.forEach(([nid]) => {
+            const el = cy.getElementById(nid);
+            if (el.length) el.addClass('highlighted');
+        });
+    }
+}
+
+// ----------------------------------------------------------------
+// Main runner
+// ----------------------------------------------------------------
+async function runAlgorithm(algo, extraParams = {}) {
+    if (!dbLoaded) {
+        window.appendLog('WARN', 'Abre una base de datos primero.');
+        return;
+    }
+
+    const params = {
+        rel_type:     null,
+        weight_key:   null,
+        src:          parseInt(document.getElementById('algo-src')?.value) || 0,
+        dst:          parseInt(document.getElementById('algo-dst')?.value) || 0,
+        k:            parseInt(document.getElementById('algo-k')?.value)   || 3,
+        n:            10,
+        capacity_key: 'rate_A_MVA',
+        ...extraParams,
+    };
+
+    let result;
+    try {
+        result = await window.pywebview.api.run_algorithm(algo, params);
+    } catch(e) {
+        window.appendLog('ERROR', String(e));
+        return;
+    }
+
+    if (!result || !result.ok) {
+        window.appendLog('ERROR', result?.error || 'Error desconocido');
+        showAlgoResult(algo, `<span style="color:var(--error)">${result?.error}</span>`);
+        return;
+    }
+
+    window.appendLog('INFO', `${result.label}: completado.`);
+    highlightFromAlgo(result);
+
+    let html = '';
+
+    switch (result.type) {
+        case 'scalar':
+            html = `<div class="algo-scalar">${result.value}</div>
+                    <div class="algo-scalar-sub">${result.label}</div>`;
+            break;
+
+        case 'node_map':
+            html = renderNodeMap(result.data);
+            if (result.scalar) html += `<div class="algo-scalar-sub">${result.scalar}</div>`;
+            break;
+
+        case 'summary':
+            html = renderSummary(result.data);
+            break;
+
+        case 'id_list':
+            html = `<div class="algo-scalar">${result.scalar}</div>`;
+            if (result.ids && result.ids.length) {
+                html += result.ids.slice(0, 30).map(id =>
+                    `<div class="algo-row"><span class="algo-key">id</span>
+                     <span class="algo-val">${id}</span></div>`
+                ).join('');
+            }
+            break;
+
+        case 'ranking':
+            html = (result.data || []).map(([nid, score], i) =>
+                `<div class="algo-row">
+                    <span class="algo-key">#${i+1} nodo ${nid}</span>
+                    <span class="algo-val mid">${score}</span>
+                </div>`
+            ).join('');
+            break;
+
+        case 'paths':
+            html = (result.data || []).map((p, i) =>
+                `<div class="algo-row">
+                    <span class="algo-key">Camino ${i+1}</span>
+                    <span class="algo-val">costo ${p.cost}</span>
+                </div>
+                <div style="font-size:10px;color:var(--dim);padding:1px 0 4px 8px">
+                    ${p.nodes.join(' → ')}
+                </div>`
+            ).join('');
+            break;
+
+        case 'edge_list':
+            html = (result.data || []).map(([rid, src, dst, idx]) =>
+                `<div class="algo-row">
+                    <span class="algo-key">${src}→${dst}</span>
+                    <span class="algo-val ${idx > 0.01 ? 'hi' : 'lo'}">${idx}</span>
+                </div>`
+            ).join('');
+            break;
+
+        default:
+            html = `<pre>${JSON.stringify(result, null, 2)}</pre>`;
+    }
+
+    showAlgoResult(result.label, html);
+}
+
+// ----------------------------------------------------------------
+// Wire algorithm buttons
+// ----------------------------------------------------------------
+function wireAlgorithms() {
+    document.querySelectorAll('.algo-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const algo = btn.dataset.algo;
+            algoSpinner(btn, true);
+            try {
+                await runAlgorithm(algo);
+            } finally {
+                algoSpinner(btn, false);
+            }
+        });
+    });
+}
+
+// Extend the DOMContentLoaded hook without overriding it
+const _origLoaded = window.addEventListener;
+window.addEventListener('DOMContentLoaded', () => {
+    wireAlgorithms();
+});

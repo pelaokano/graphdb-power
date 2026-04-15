@@ -497,6 +497,168 @@ static PyObject *PyGraph_exit(PyGraph *self, PyObject *args)
     Py_RETURN_FALSE;
 }
 
+/* ================================================================== */
+/*  NEW ALGORITHM METHODS — appended, no existing code modified        */
+/* ================================================================== */
+
+static PyObject *PyGraph_betweenness_centrality(PyGraph *self,
+                                                 PyObject *args,
+                                                 PyObject *kwargs)
+{
+    const char *rel_type  = NULL;
+    int         normalized = 1;
+    static char *kwlist[] = { "rel_type", "normalized", NULL };
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|zi", kwlist,
+                                     &rel_type, &normalized))
+        return NULL;
+
+    CentralityResult *r = algo_betweenness_centrality(self->g, rel_type,
+                                                        normalized);
+    if (!r) { PyErr_SetString(PyExc_RuntimeError, "betweenness_centrality failed"); return NULL; }
+
+    PyObject *d = PyDict_New();
+    for (int i = 0; i < r->count; i++) {
+        PyObject *k = PyLong_FromLongLong((long long)r->entries[i].node_id);
+        PyObject *v = PyFloat_FromDouble(r->entries[i].value);
+        PyDict_SetItem(d, k, v);
+        Py_DECREF(k); Py_DECREF(v);
+    }
+    centrality_result_free(r);
+    return d;
+}
+
+static PyObject *PyGraph_pagerank(PyGraph *self, PyObject *args,
+                                   PyObject *kwargs)
+{
+    const char *rel_type  = NULL;
+    double      damping   = 0.85;
+    int         max_iter  = 100;
+    double      tol       = 1e-6;
+    static char *kwlist[] = { "rel_type", "damping", "max_iter", "tol", NULL };
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|zdid", kwlist,
+                                     &rel_type, &damping, &max_iter, &tol))
+        return NULL;
+
+    CentralityResult *r = algo_pagerank(self->g, rel_type, damping,
+                                         max_iter, tol);
+    if (!r) { PyErr_SetString(PyExc_RuntimeError, "pagerank failed"); return NULL; }
+
+    PyObject *d = PyDict_New();
+    for (int i = 0; i < r->count; i++) {
+        PyObject *k = PyLong_FromLongLong((long long)r->entries[i].node_id);
+        PyObject *v = PyFloat_FromDouble(r->entries[i].value);
+        PyDict_SetItem(d, k, v);
+        Py_DECREF(k); Py_DECREF(v);
+    }
+    centrality_result_free(r);
+    return d;
+}
+
+static PyObject *PyGraph_max_flow(PyGraph *self, PyObject *args,
+                                   PyObject *kwargs)
+{
+    long long   src_id, dst_id;
+    const char *rel_type     = NULL;
+    const char *capacity_key = NULL;
+    static char *kwlist[] = { "src", "dst", "rel_type", "capacity_key", NULL };
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "LL|zz", kwlist,
+                                     &src_id, &dst_id,
+                                     &rel_type, &capacity_key))
+        return NULL;
+
+    FlowResult fr = algo_max_flow(self->g, (int64_t)src_id, (int64_t)dst_id,
+                                   rel_type, capacity_key);
+    if (!fr.ok) { PyErr_SetString(PyExc_RuntimeError, "max_flow failed"); return NULL; }
+    return PyFloat_FromDouble(fr.flow_value);
+}
+
+static PyObject *PyGraph_k_shortest_paths(PyGraph *self, PyObject *args,
+                                           PyObject *kwargs)
+{
+    long long   src_id, dst_id;
+    int         k            = 3;
+    const char *rel_type     = NULL;
+    const char *weight_key   = NULL;
+    static char *kwlist[] = { "src", "dst", "k", "rel_type", "weight_key", NULL };
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "LL|izz", kwlist,
+                                     &src_id, &dst_id, &k,
+                                     &rel_type, &weight_key))
+        return NULL;
+
+    KPathResult *r = algo_k_shortest_paths(self->g, (int64_t)src_id,
+                                            (int64_t)dst_id, k,
+                                            rel_type, weight_key);
+    if (!r) { PyErr_SetString(PyExc_RuntimeError, "k_shortest_paths failed"); return NULL; }
+
+    PyObject *lst = PyList_New(r->count);
+    for (int i = 0; i < r->count; i++) {
+        KPath *kp = &r->paths[i];
+        PyObject *nodes = PyList_New(kp->length);
+        for (int j = 0; j < kp->length; j++)
+            PyList_SET_ITEM(nodes, j, PyLong_FromLongLong((long long)kp->node_ids[j]));
+        PyObject *item = Py_BuildValue("{s:O, s:d}",
+                                       "nodes", nodes, "cost", kp->cost);
+        Py_DECREF(nodes);
+        PyList_SET_ITEM(lst, i, item);
+    }
+    kpath_result_free(r);
+    return lst;
+}
+
+static PyObject *PyGraph_strongly_connected_components(PyGraph *self,
+                                                         PyObject *args,
+                                                         PyObject *kwargs)
+{
+    const char *rel_type  = NULL;
+    static char *kwlist[] = { "rel_type", NULL };
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|z", kwlist, &rel_type))
+        return NULL;
+
+    ComponentResult *r = algo_strongly_connected_components(self->g, rel_type);
+    if (!r) { PyErr_SetString(PyExc_RuntimeError, "scc failed"); return NULL; }
+
+    PyObject *d = PyDict_New();
+    for (int i = 0; i < r->node_count; i++) {
+        PyObject *k = PyLong_FromLongLong((long long)r->node_ids[i]);
+        PyObject *v = PyLong_FromLong((long)r->component[i]);
+        PyDict_SetItem(d, k, v);
+        Py_DECREF(k); Py_DECREF(v);
+    }
+    PyObject *result = Py_BuildValue("(O, i)", d, r->component_count);
+    Py_DECREF(d);
+    component_result_free(r);
+    return result;
+}
+
+static PyObject *PyGraph_clustering_coefficient(PyGraph *self,
+                                                  PyObject *args,
+                                                  PyObject *kwargs)
+{
+    const char *rel_type  = NULL;
+    static char *kwlist[] = { "rel_type", NULL };
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|z", kwlist, &rel_type))
+        return NULL;
+
+    ClusterResult *r = algo_clustering_coefficient(self->g, rel_type);
+    if (!r) { PyErr_SetString(PyExc_RuntimeError, "clustering_coefficient failed"); return NULL; }
+
+    PyObject *local = PyDict_New();
+    for (int i = 0; i < r->count; i++) {
+        PyObject *k = PyLong_FromLongLong((long long)r->entries[i].node_id);
+        PyObject *v = r->entries[i].local_cc >= 0
+                      ? PyFloat_FromDouble(r->entries[i].local_cc)
+                      : (Py_INCREF(Py_None), Py_None);
+        PyDict_SetItem(local, k, v);
+        Py_DECREF(k); Py_DECREF(v);
+    }
+    PyObject *result = Py_BuildValue("{s:O, s:d}",
+                                     "local", local,
+                                     "global", r->global_cc);
+    Py_DECREF(local);
+    cluster_result_free(r);
+    return result;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Method table                                                        */
 /* ------------------------------------------------------------------ */
@@ -592,6 +754,30 @@ static PyMethodDef PyGraph_methods[] = {
 
     { "__enter__",            (PyCFunction)PyGraph_enter, METH_NOARGS, NULL },
     { "__exit__",             (PyCFunction)PyGraph_exit,  METH_VARARGS, NULL },
+
+    { "betweenness_centrality",        (PyCFunction)PyGraph_betweenness_centrality,
+      METH_VARARGS | METH_KEYWORDS,
+      "betweenness_centrality(rel_type=None, normalized=True) -> {node_id: float}" },
+
+    { "pagerank",                      (PyCFunction)PyGraph_pagerank,
+      METH_VARARGS | METH_KEYWORDS,
+      "pagerank(rel_type=None, damping=0.85, max_iter=100, tol=1e-6) -> {node_id: float}" },
+
+    { "max_flow",                      (PyCFunction)PyGraph_max_flow,
+      METH_VARARGS | METH_KEYWORDS,
+      "max_flow(src, dst, rel_type=None, capacity_key=None) -> float" },
+
+    { "k_shortest_paths",              (PyCFunction)PyGraph_k_shortest_paths,
+      METH_VARARGS | METH_KEYWORDS,
+      "k_shortest_paths(src, dst, k=3, rel_type=None, weight_key=None) -> [{nodes, cost}]" },
+
+    { "strongly_connected_components", (PyCFunction)PyGraph_strongly_connected_components,
+      METH_VARARGS | METH_KEYWORDS,
+      "strongly_connected_components(rel_type=None) -> ({node_id: comp_idx}, n_comps)" },
+
+    { "clustering_coefficient",        (PyCFunction)PyGraph_clustering_coefficient,
+      METH_VARARGS | METH_KEYWORDS,
+      "clustering_coefficient(rel_type=None) -> {local:{node_id:float}, global:float}" },
 
     { NULL, NULL, 0, NULL }
 };

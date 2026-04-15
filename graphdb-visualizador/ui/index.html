@@ -84,6 +84,51 @@
       </div>
     </div>
 
+    <div class="s-section">
+      <h3>Algoritmos de Grafo</h3>
+
+      <div class="algo-group">
+        <div class="algo-subhead">Topologia</div>
+        <button class="algo-btn" data-algo="summary">Resumen del grafo</button>
+        <button class="algo-btn" data-algo="is_connected">Conectividad</button>
+        <button class="algo-btn" data-algo="connected_components">Componentes WCC</button>
+        <button class="algo-btn" data-algo="strongly_connected_components">Componentes SCC</button>
+        <button class="algo-btn" data-algo="bridges">Puentes (N-1)</button>
+        <button class="algo-btn" data-algo="articulation_points">Puntos articulacion</button>
+
+        <div class="algo-subhead">Centralidad</div>
+        <button class="algo-btn" data-algo="degree">Grado</button>
+        <button class="algo-btn" data-algo="betweenness">Betweenness</button>
+        <button class="algo-btn" data-algo="pagerank">PageRank</button>
+        <button class="algo-btn" data-algo="closeness">Closeness</button>
+        <button class="algo-btn" data-algo="clustering">Clustering coeff.</button>
+
+        <div class="algo-subhead">Metricas globales</div>
+        <button class="algo-btn" data-algo="density">Densidad</button>
+        <button class="algo-btn" data-algo="fiedler">Valor de Fiedler</button>
+        <button class="algo-btn" data-algo="assortativity">Asortatividad</button>
+
+        <div class="algo-subhead">Caminos</div>
+        <div class="algo-inputs">
+          <input id="algo-src" type="number" placeholder="Nodo origen" min="0">
+          <input id="algo-dst" type="number" placeholder="Nodo destino" min="0">
+          <input id="algo-k"   type="number" placeholder="K" min="1" value="3" style="width:48px">
+        </div>
+        <button class="algo-btn" data-algo="dijkstra">Dijkstra</button>
+        <button class="algo-btn" data-algo="k_shortest">K caminos</button>
+        <button class="algo-btn" data-algo="max_flow">Flujo maximo</button>
+
+        <div class="algo-subhead">Sistemas electricos</div>
+        <button class="algo-btn" data-algo="bess_ranking">Ranking BESS</button>
+        <button class="algo-btn" data-algo="vulnerability">Vulnerabilidad aristas</button>
+      </div>
+
+      <div id="algo-result-panel">
+        <div id="algo-result-title"></div>
+        <div id="algo-result-body"></div>
+      </div>
+    </div>
+
   </div><!-- /sidebar -->
 
   <!-- GRAPH -->

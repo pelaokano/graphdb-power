@@ -512,3 +512,433 @@ class GraphAnalyzer:
             "n_articulation_pts":  len(self.g.find_articulation_points(rel_type=rel_type)),
             "is_connected":        bool(self.g.is_connected(rel_type=rel_type)),
         }
+
+    # ================================================================
+    # NEW METHODS — appended, no existing code modified
+    # ================================================================
+
+    # ----------------------------------------------------------------
+    # C-accelerated centralities (call C layer directly)
+    # ----------------------------------------------------------------
+
+    def betweenness_centrality_c(self, rel_type=None, normalized=True):
+        """
+        Betweenness centrality via C (Brandes algorithm).
+        Significantly faster than the Python/NetworkX version for
+        large graphs. Returns {node_id: float}.
+        """
+        try:
+            return self.g.betweenness_centrality(rel_type=rel_type,
+                                                  normalized=int(normalized))
+        except AttributeError:
+            # fallback to Python implementation if C not compiled yet
+            return self.betweenness_centrality(rel_type, None)
+
+    def pagerank_c(self, rel_type=None, damping=0.85, max_iter=100, tol=1e-6):
+        """
+        PageRank via C (power iteration).
+        Returns {node_id: float}.
+        """
+        try:
+            return self.g.pagerank(rel_type=rel_type, damping=damping,
+                                    max_iter=max_iter, tol=tol)
+        except AttributeError:
+            return self.pagerank(rel_type)
+
+    def max_flow_c(self, src, dst, rel_type=None, capacity_key="rate_A_MVA"):
+        """
+        Max flow between src and dst via C (Edmonds-Karp).
+        Returns float (flow value).
+        """
+        try:
+            return self.g.max_flow(src, dst, rel_type=rel_type,
+                                    capacity_key=capacity_key)
+        except AttributeError:
+            fval, _ = self.max_flow(src, dst, rel_type, capacity_key)
+            return fval
+
+    def k_shortest_paths_c(self, src, dst, k=3, rel_type=None, weight_key=None):
+        """
+        K shortest paths via C (Yen's algorithm).
+        Returns list of {nodes: [node_id,...], cost: float}.
+        """
+        try:
+            return self.g.k_shortest_paths(src, dst, k=k, rel_type=rel_type,
+                                            weight_key=weight_key)
+        except AttributeError:
+            return self.k_shortest_paths(src, dst, k=k, rel_type=rel_type,
+                                          weight_key=weight_key)
+
+    def strongly_connected_components(self, rel_type=None):
+        """
+        Strongly connected components via C (Kosaraju).
+        Returns ({node_id: component_index}, n_components).
+        """
+        try:
+            return self.g.strongly_connected_components(rel_type=rel_type)
+        except AttributeError:
+            G   = self._build_networkx(rel_type)
+            sccs = list(nx.strongly_connected_components(G.to_directed()))
+            comp_map = {}
+            for idx, scc in enumerate(sccs):
+                for nid in scc:
+                    comp_map[nid] = idx
+            return comp_map, len(sccs)
+
+    def clustering_coefficient_c(self, rel_type=None):
+        """
+        Clustering coefficient via C (triangle counting).
+        Returns {local: {node_id: float|None}, global: float}.
+        """
+        try:
+            return self.g.clustering_coefficient(rel_type=rel_type)
+        except AttributeError:
+            G   = self._build_networkx(rel_type)
+            loc = nx.clustering(G)
+            glb = nx.transitivity(G)
+            return {"local": loc, "global": glb}
+
+    # ----------------------------------------------------------------
+    # New Python-only metrics
+    # ----------------------------------------------------------------
+
+    def assortativity(self, rel_type=None):
+        """
+        Degree assortativity coefficient.
+        Positive  -> high-degree nodes tend to connect to high-degree nodes.
+        Negative  -> hubs connect to low-degree nodes (hub-and-spoke).
+        Returns float in [-1, 1].
+        """
+        G = self._build_networkx(rel_type)
+        try:
+            return nx.degree_assortativity_coefficient(G)
+        except Exception:
+            return float("nan")
+
+    def density(self, rel_type=None):
+        """
+        Graph density: ratio of actual edges to maximum possible edges.
+        Returns float in [0, 1].
+        """
+        G = self._build_networkx(rel_type)
+        return nx.density(G)
+
+    def average_shortest_path_length(self, rel_type=None, weight_key=None):
+        """
+        Average shortest path length over all connected node pairs.
+        Returns float, or None if graph is not connected.
+        """
+        G = self._build_networkx(rel_type, weight_key)
+        w = "weight" if weight_key else None
+        try:
+            return nx.average_shortest_path_length(G, weight=w)
+        except nx.NetworkXError:
+            # not connected: compute on largest component
+            largest = max(nx.connected_components(G), key=len)
+            sub = G.subgraph(largest)
+            return nx.average_shortest_path_length(sub, weight=w)
+
+    def eccentricity(self, rel_type=None):
+        """
+        Eccentricity of each node: max shortest path to any other node.
+        Returns {node_id: int}.
+        """
+        G = self._build_networkx(rel_type)
+        try:
+            return dict(nx.eccentricity(G))
+        except Exception:
+            largest = max(nx.connected_components(G), key=len)
+            return dict(nx.eccentricity(G.subgraph(largest)))
+
+    def radius(self, rel_type=None):
+        """
+        Graph radius: min eccentricity (the most central node).
+        Returns int or None.
+        """
+        ecc = self.eccentricity(rel_type)
+        return min(ecc.values()) if ecc else None
+
+    def periphery(self, rel_type=None):
+        """
+        Peripheral nodes: those with eccentricity equal to the diameter.
+        Returns list of node_ids.
+        """
+        ecc  = self.eccentricity(rel_type)
+        diam = max(ecc.values()) if ecc else 0
+        return [nid for nid, e in ecc.items() if e == diam]
+
+    def center(self, rel_type=None):
+        """
+        Central nodes: those with eccentricity equal to the radius.
+        Returns list of node_ids.
+        """
+        ecc = self.eccentricity(rel_type)
+        rad = min(ecc.values()) if ecc else 0
+        return [nid for nid, e in ecc.items() if e == rad]
+
+    def label_propagation_communities(self, rel_type=None):
+        """
+        Community detection via label propagation.
+        No external dependencies beyond NetworkX.
+        Returns list of sets of node_ids.
+        """
+        G = self._build_networkx(rel_type)
+        communities = nx.community.label_propagation_communities(
+            G.to_undirected())
+        return [set(c) for c in communities]
+
+    def rich_club_coefficient(self, rel_type=None):
+        """
+        Rich-club coefficient: tendency of high-degree nodes to be
+        interconnected. Returns {degree: coefficient}.
+        """
+        G = self._build_networkx(rel_type)
+        try:
+            return dict(nx.rich_club_coefficient(G, normalized=False))
+        except Exception:
+            return {}
+
+    def node_connectivity(self, rel_type=None):
+        """
+        Minimum node connectivity of the graph.
+        Minimum number of nodes to remove to disconnect the graph.
+        Returns int.
+        """
+        G = self._build_networkx(rel_type)
+        try:
+            return nx.node_connectivity(G)
+        except Exception:
+            return 0
+
+    def edge_connectivity(self, rel_type=None):
+        """
+        Minimum edge connectivity.
+        Minimum number of edges to remove to disconnect the graph.
+        Returns int.
+        """
+        G = self._build_networkx(rel_type)
+        try:
+            return nx.edge_connectivity(G)
+        except Exception:
+            return 0
+
+    def wiener_index(self, rel_type=None, weight_key=None):
+        """
+        Wiener index: sum of shortest path distances over all pairs.
+        Measure of topological compactness.
+        Returns float.
+        """
+        G = self._build_networkx(rel_type, weight_key)
+        w = "weight" if weight_key else None
+        total = 0.0
+        try:
+            for src in G.nodes():
+                lengths = nx.single_source_shortest_path_length(G, src) \
+                          if not w else \
+                          nx.single_source_dijkstra_path_length(G, src, weight=w)
+                total += sum(lengths.values())
+            return total / 2.0
+        except Exception:
+            return float("nan")
+
+    # ----------------------------------------------------------------
+    # Power systems specific (new)
+    # ----------------------------------------------------------------
+
+    def vulnerability_index(self, rel_type=None):
+        """
+        Vulnerability index per edge: ratio of betweenness centrality
+        to thermal rating (rate_A_MVA). Higher = more critical from
+        both topological and electrical perspectives.
+
+        Returns list of (rel_id, src, dst, index) sorted descending.
+        """
+        ebc   = self.edge_betweenness_centrality(rel_type)
+        edges = self._load_edges(rel_type)
+
+        result = []
+        for src, dst, rid, _w in edges:
+            rel = self.g.get_rel(rid)
+            try:
+                props = json.loads(rel["properties"]) if rel else {}
+            except Exception:
+                props = {}
+            rate = props.get("rate_A_MVA", props.get("rate_mva", 1.0))
+            if rate is None or rate == 0:
+                rate = 1.0
+            btw = ebc.get((src, dst), ebc.get((dst, src), 0.0))
+            idx = btw / float(rate)
+            result.append((rid, src, dst, round(idx, 6)))
+
+        return sorted(result, key=lambda x: x[3], reverse=True)
+
+    def electrical_distance(self, rel_type=None, weight_key="X_pu"):
+        """
+        Electrical distance matrix based on shortest path impedances.
+        Returns (matrix NxN as np.ndarray, node_ids list).
+        """
+        node_ids = self._load_nodes(rel_type=rel_type)
+        node_map = self._node_index(node_ids)
+        edges    = self._load_edges(rel_type, weight_key)
+        n = len(node_ids)
+        D = np.full((n, n), np.inf)
+        np.fill_diagonal(D, 0.0)
+
+        for src, dst, rid, w in edges:
+            i = node_map.get(src, -1)
+            j = node_map.get(dst, -1)
+            if i < 0 or j < 0:
+                continue
+            if w == 0:
+                w = 1.0
+            D[i, j] = min(D[i, j], float(w))
+            D[j, i] = min(D[j, i], float(w))
+
+        # Floyd-Warshall
+        for k in range(n):
+            for i in range(n):
+                for j in range(n):
+                    if D[i, k] + D[k, j] < D[i, j]:
+                        D[i, j] = D[i, k] + D[k, j]
+
+        return D, node_ids
+
+    def _load_graph_data(self, rel_type=None):
+        """Helper: returns (node_ids, node_map, edges)."""
+        nodes    = self._load_nodes(rel_type=rel_type)
+        node_map = self._node_index(nodes)
+        edges    = self._load_edges(rel_type)
+        return nodes, node_map, edges
+
+    def _load_all_nodes_indexed(self):
+        """Returns (node_ids_list, {node_id: index}, labels_dict)."""
+        rows = self.g.query("MATCH (n) RETURN n")
+        node_ids = []
+        for row in rows:
+            try:
+                node_ids.append(int(row))
+            except ValueError:
+                pass
+        node_map = {nid: i for i, nid in enumerate(node_ids)}
+        return node_ids, node_map, {}
+
+    def summary(self, rel_type=None):
+        """
+        Returns a comprehensive summary dict of the graph.
+        Combines topological and structural metrics.
+        """
+        bridges = self.g.find_bridges(rel_type=rel_type)
+        aps     = self.g.find_articulation_points(rel_type=rel_type)
+        deg     = self.g.degree(rel_type=rel_type)
+
+        deg_vals = list(deg.values())
+        return {
+            "n_nodes":             len(deg),
+            "n_edges":             sum(deg_vals) // 2,
+            "is_connected":        bool(self.g.is_connected(rel_type=rel_type)),
+            "n_bridges":           len(bridges),
+            "n_articulation_pts":  len(aps),
+            "density":             self.density(rel_type),
+            "fiedler_value":       self.fiedler_value(rel_type),
+            "avg_degree":          sum(deg_vals) / len(deg_vals) if deg_vals else 0,
+            "max_degree":          max(deg_vals) if deg_vals else 0,
+            "clustering_global":   self.clustering_coefficient_c(rel_type).get("global", 0),
+            "assortativity":       self.assortativity(rel_type),
+        }
+
+    # ================================================================
+    # PTDF / LODF integration
+    # ================================================================
+
+    def ptdf_from_dataframe(self, ptdf_df, rel_type="LINEA",
+                             persist_topk=True):
+        """
+        Crea un GraphPTDF a partir de una PTDF DataFrame pre-calculada
+        (producida por PTDFCalculator o equivalente).
+
+        Parameters
+        ----------
+        ptdf_df : pd.DataFrame
+            Matriz PTDF shape (n_ramas, n_buses).
+            Index = etiquetas de rama, columns = numeros de bus PSS/E.
+        rel_type : str
+            Tipo de relacion en graphdb que representa las ramas.
+        persist_topk : bool
+            Si True, escribe las top sensibilidades en la BD.
+
+        Returns
+        -------
+        GraphPTDF
+        """
+        from graphdb_ptdf import GraphPTDF
+        return GraphPTDF(
+            graph=self.g,
+            ptdf_df=ptdf_df,
+            rel_type=rel_type,
+            persist_topk=persist_topk,
+        )
+
+    def lodf_from_ptdf(self, graph_ptdf, base_flows_mw,
+                        ratings_mw=None, lodf_tol=1e-6,
+                        max_natural_overloads=2):
+        """
+        Calcula la LODF completa y el analisis de contingencias N-1 a partir
+        de un GraphPTDF y los flujos base.
+
+        Parameters
+        ----------
+        graph_ptdf : GraphPTDF
+            Instancia de GraphPTDF con PTDF base ya cargada.
+        base_flows_mw : pd.Series
+            Flujos base en MW, indexados por etiqueta de rama.
+        ratings_mw : pd.Series | None
+            Capacidades termicas en MW. Si None, no aplica filtro de sobrecarga.
+        lodf_tol : float
+            Tolerancia para descartar contingencias singulares.
+        max_natural_overloads : int
+            Maximo de sobrecargas naturales post-contingencia aceptadas.
+
+        Returns
+        -------
+        GraphLODF
+        """
+        from graphdb_lodf import GraphLODF
+        return GraphLODF(
+            graph_ptdf=graph_ptdf,
+            base_flows_mw=base_flows_mw,
+            ratings_mw=ratings_mw,
+            lodf_tol=lodf_tol,
+            max_natural_overloads=max_natural_overloads,
+        )
+
+    def contingency_screening(self, graph_lodf, n_top=20):
+        """
+        Screening de contingencias N-1: retorna las n_top contingencias
+        mas criticas combinando LODF con cargabilidades actuales del grafo.
+
+        Parameters
+        ----------
+        graph_lodf : GraphLODF
+            Instancia de GraphLODF con contingencias pre-calculadas.
+        n_top : int
+            Numero de contingencias a retornar.
+
+        Returns
+        -------
+        pd.DataFrame con columnas:
+            rank, label, max_loading_pct, n_overloads, verdict
+        """
+        from graphdb_lodf import GraphLODF
+
+        ranking = graph_lodf.ranking_contingencias_criticas(n_top)
+        if ranking.empty:
+            return ranking
+
+        verdicts = []
+        for _, row in ranking.iterrows():
+            result = graph_lodf.verificar_n1_electrico(row["label"])
+            verdicts.append(result.get("verdict", "seguro"))
+
+        ranking = ranking.copy()
+        ranking["verdict"] = verdicts
+        return ranking

@@ -103,7 +103,7 @@ graphdb_ext = Extension(
 
 setup(
     name="graphdb",
-    version="0.2.0",
+    version="0.3.0",
     description="Graph database with SQLite backend, Cypher queries, and graph algorithms",
     ext_modules=[graphdb_ext],
     python_requires=">=3.8",
